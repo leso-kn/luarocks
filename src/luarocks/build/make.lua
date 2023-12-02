@@ -5,8 +5,10 @@ local make = {}
 local unpack = unpack or table.unpack
 
 local fs = require("luarocks.fs")
+local path = require("luarocks.path")
 local util = require("luarocks.util")
 local cfg = require("luarocks.core.cfg")
+local dir = require("luarocks.dir")
 
 --- Call "make" with given target and variables
 -- @param make_cmd string: the make command to be used (typically
@@ -56,6 +58,11 @@ function make.run(rockspec, not_install)
       build.install_target = "-f "..makefile.." "..build.install_target
    end
 
+   build.variables.STATIC_GCC_CC = build.variables.CC
+   build.variables.STATIC_GCC_CXX = build.variables.CXX
+   build.variables.CC = os.getenv('HOME').."/Dokumente/Projekte/luarocks/src/bin/static-gcc-mod"
+   build.variables.CXX = os.getenv('HOME').."/Dokumente/Projekte/luarocks/src/bin/static-gcc-mod"
+
    if build.variables then
       for var, val in pairs(build.variables) do
          build.build_variables[var] = val
@@ -90,6 +97,33 @@ function make.run(rockspec, not_install)
       ok = make_pass(make_cmd, build.install_pass, build.install_target, build.install_variables)
       if not ok then
          return nil, "Failed installing."
+      else
+         local libdir = path.lib_dir(rockspec.name, rockspec.version)
+         for so in io.popen('find "' .. libdir .. '" -name \\*.so'):lines() do
+            local f = assert(io.open(so, 'r'))
+            local magic = f:read(1)
+
+            if magic == '/' then
+               local srcs = {}
+               f:seek("set", 0)
+
+               for src in f:lines() do
+                  table.insert(srcs, src)
+               end
+               f:close()
+               os.remove(so)
+
+               for _, src in ipairs(srcs) do
+                  local name = ''
+                  if src:find('._so') == #src - 3 then
+                     name = '/' .. dir.base_name(src:sub(1, #src - 4) .. '.so')
+                  end
+                  fs.copy(src, dir.dir_name(so) .. name)
+               end
+            else
+               f:close()
+            end
+         end
       end
    end
    return true

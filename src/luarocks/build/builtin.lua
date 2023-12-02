@@ -195,6 +195,9 @@ function builtin.run(rockspec, no_install)
          end
 
          local ok = execute(variables.LD.." "..variables.LDFLAGS.." "..variables.LIBFLAG, "-o", library, unpack(extras))
+         if ok then
+            ok = execute(variables.AR, "rc", library:gsub('%.dll', '.a'), unpack(objects))
+         end
          return ok
       end
       --[[ TODO disable static libs until we fix the conflict in the manifest, which will take extending the manifest format.
@@ -226,6 +229,9 @@ function builtin.run(rockspec, no_install)
          def:write("luaopen_"..exported_name.."\n")
          def:close()
          local ok = execute(variables.LD, "-dll", "-def:"..deffile, "-out:"..library, dir.path(variables.LUA_LIBDIR, variables.LUALIB), unpack(extras))
+         if ok then
+            ok = execute(variables.AR, "-out:" .. library:gsub('%.dll$', '.lib'), unpack(objects))
+         end
          local basedir = ""
          if name:find("%.") ~= nil then
             basedir = name:gsub("%.%w+$", "\\")
@@ -262,7 +268,11 @@ function builtin.run(rockspec, no_install)
             extras[#extras+1] = "-L"..variables.LUA_LIBDIR
             extras[#extras+1] = "-llua"
          end
-         return execute(variables.LD.." "..variables.LDFLAGS.." "..variables.LIBFLAG, "-o", library, unpack(extras))
+         local ok = execute(variables.LD.." "..variables.LDFLAGS.." "..variables.LIBFLAG, "-o", library, unpack(extras))
+         if ok then
+            ok = execute(variables.AR, "rc", library:gsub('%.so$', '.a'), unpack(objects))
+         end
+         return ok
       end
       compile_static_library = function(library, objects, libraries, libdirs, name)  -- luacheck: ignore 211
          local ok = execute(variables.AR, "rc", library, unpack(objects))
@@ -361,6 +371,12 @@ function builtin.run(rockspec, no_install)
          for name, dest in pairs(mods.tbl) do
             fs.make_dir(dir.dir_name(dest))
             ok, err = fs.copy(name, dest, mods.perms)
+            if ok and (name:find('%.so$') or name:find('%.dll$')) then
+               ok, err = fs.copy(
+                  name:gsub('%.so$', '.a'):gsub('%.dll', cfg.is_platform("mingw32") and '.a' or '.lib'),
+                  dest:gsub('%.so$', '.a'):gsub('%.dll', cfg.is_platform("mingw32") and '.a' or '.lib'),
+                  mods.perms)
+            end
             if not ok then
                return nil, "Failed installing "..name.." in "..dest..": "..err
             end
